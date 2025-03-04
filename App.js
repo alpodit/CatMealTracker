@@ -232,6 +232,38 @@ export default function App() {
     </View>
   );
 
+  const addMealPreset = () => {
+    if (newPreset.trim() === '') {
+      Alert.alert('Error', 'Please enter a preset amount');
+      return;
+    }
+    
+    if (mealPresets.includes(newPreset.trim())) {
+      Alert.alert('Error', 'This preset already exists');
+      return;
+    }
+    
+    setMealPresets([...mealPresets, newPreset.trim()]);
+    setNewPreset('');
+  };
+  
+  const removeMealPreset = (preset) => {
+    Alert.alert(
+      'Confirm Deletion',
+      `Are you sure you want to delete the preset "${preset}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => {
+            setMealPresets(mealPresets.filter(item => item !== preset));
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
