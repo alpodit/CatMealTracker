@@ -19,6 +19,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 export default function App() {
   const [cats, setCats] = useState([]);
   const [meals, setMeals] = useState([]);
+  const [mealPresets, setMealPresets] = useState(['1/4 cup', '1/2 cup', '1 cup', '1 can', '2 tablespoons']);
+  const [newPreset, setNewPreset] = useState('');
   const [addCatModalVisible, setAddCatModalVisible] = useState(false);
   const [addMealModalVisible, setAddMealModalVisible] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -45,9 +47,11 @@ export default function App() {
     try {
       const storedCats = await AsyncStorage.getItem('cats');
       const storedMeals = await AsyncStorage.getItem('meals');
+      const storedPresets = await AsyncStorage.getItem('mealPresets');
       
       if (storedCats) setCats(JSON.parse(storedCats));
       if (storedMeals) setMeals(JSON.parse(storedMeals));
+      if (storedPresets) setMealPresets(JSON.parse(storedPresets));
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -58,6 +62,7 @@ export default function App() {
     try {
       await AsyncStorage.setItem('cats', JSON.stringify(cats));
       await AsyncStorage.setItem('meals', JSON.stringify(meals));
+      await AsyncStorage.setItem('mealPresets', JSON.stringify(mealPresets));
     } catch (error) {
       console.error('Error saving data:', error);
     }
@@ -444,6 +449,30 @@ export default function App() {
               </View>
             </View>
             
+            <View style={styles.selectContainer}>
+  <Text style={styles.selectLabel}>Preset Amounts:</Text>
+  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetsContainer}>
+    {mealPresets.map((preset, index) => (
+      <TouchableOpacity
+        key={index}
+        style={[
+          styles.presetButton,
+          mealAmount === preset && styles.presetButtonSelected
+        ]}
+        onPress={() => setMealAmount(preset)}
+      >
+        <Text style={[
+          styles.presetButtonText,
+          mealAmount === preset && styles.presetButtonTextSelected
+        ]}>
+          {preset}
+        </Text>
+      </TouchableOpacity>
+    ))}
+  </ScrollView>
+</View>
+
+
             {/* Meal Amount */}
             <TextInput
               style={styles.input}
@@ -877,5 +906,74 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 16,
     color: '#444',
+  },
+  presetsContainer: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  presetButton: {
+    backgroundColor: '#f7f8fa',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    marginRight: 8,
+    marginBottom: 5,
+  },
+  presetButtonSelected: {
+    backgroundColor: '#5e72e4',
+  },
+  presetButtonText: {
+    color: '#666',
+    fontWeight: '500',
+  },
+  presetButtonTextSelected: {
+    color: '#fff',
+  },
+  settingsSection: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 15,
+  },
+  settingsSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#444',
+    marginBottom: 10,
+  },
+  presetItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  presetText: {
+    fontSize: 16,
+    color: '#444',
+  },
+  addPresetContainer: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  presetInput: {
+    flex: 1,
+    backgroundColor: '#f7f8fa',
+    borderRadius: 10,
+    padding: 10,
+    marginRight: 10,
+  },
+  addPresetButton: {
+    backgroundColor: '#5e72e4',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPresetButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
