@@ -11,12 +11,35 @@ import {
   Alert,
   Image
 } from 'react-native';
+import { AppProvider } from './AppContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { AuthProvider } from './contexts/AuthContext';
+import { AppProvider } from './contexts/AppContext';
+import AppNavigator from './navigation/AppNavigator';
+
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { AuthProvider, useAuth } from './AuthContext';
+import AuthScreens from './screens/AuthScreens';
+import MainScreens from './screens/MainScreens';
+
 
 // Main App Component
 export default function App() {
+
+  const [user, setUser] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+
   const [cats, setCats] = useState([]);
   const [meals, setMeals] = useState([]);
   const [mealPresets, setMealPresets] = useState(['1/4 cup', '1/2 cup', '1 cup', '1 can', '2 tablespoons']);
@@ -41,6 +64,164 @@ export default function App() {
   useEffect(() => {
     saveData();
   }, [cats, meals]);
+
+  // Firebase Authentication Functions
+  const signUp = async () => {
+    try {
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      setUser(userCredential.user);
+      setAuthModalVisible(false);
+    } catch (error) {
+      Alert.alert('Sign Up Error', error.message);
+    }
+  };
+
+  const signIn = async () => {
+    try {
+      const userCredential = await auth().signInWithEmailAndPassword(email, password);
+      setUser(userCredential.user);
+      setAuthModalVisible(false);
+    } catch (error) {
+      Alert.alert('Sign In Error', error.message);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      await auth().signOut();
+      setUser(null);
+      setCats([]);
+    } catch (error) {
+      Alert.alert('Sign Out Error', error.message);
+    }
+  };
+
+  // Firestore Sync Functions
+  const addCatToFirestore = async (catName) => {
+    if (!user) return;
+
+    try {
+      const newCatRef = await firestore()
+        .collection('cats')
+        .doc();
+      
+      await newCatRef.set({
+        name: catName,
+        userId: user.uid,
+        createdAt: firestore.FieldValue.serverTimestamp()
+      });
+    } catch (error) {
+      Alert.alert('Add Cat Error', error.message);
+    }
+  };
+
+  const addMealToFirestore = async (meal) => {
+    if (!selectedCat || !user) return;
+
+    try {
+      await firestore()
+        .collection('meals')
+        .add({
+          ...meal,
+          catId: selectedCat.id,
+          userId: user.uid,
+          timestamp: firestore.FieldValue.serverTimestamp()
+        });
+    } catch (error) {
+      Alert.alert('Add Meal Error', error.message);
+    }
+  };
+
+  // Real-time Listeners
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen for cats
+    const catsSubscriber = firestore()
+      .collection('cats')
+      .where('userId', '==', user.uid)
+      .onSnapshot(querySnapshot => {
+        const fetchedCats = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setCats(fetchedCats);
+      });
+
+    // Listen for meals (optional, can be filtered by selected cat)
+    const mealsSubscriber = firestore()
+      .collection('meals')
+      .where('userId', '==', user.uid)
+      .onSnapshot(querySnapshot => {
+        // Process meals here
+      });
+
+    // Cleanup subscriptions
+    return () => {
+      catsSubscriber();
+      mealsSubscriber();
+    };
+  }, [user]);
+
+  // Sharing Feature
+  const shareCatTracker = async (partnerEmail) => {
+    try {
+      // Implement shared access logic
+      await firestore()
+        .collection('sharedAccess')
+        .add({
+          ownerUserId: user.uid,
+          sharedWithEmail: partnerEmail
+        });
+      
+      Alert.alert('Sharing', `Invited ${partnerEmail} to share cat tracker`);
+    } catch (error) {
+      Alert.alert('Sharing Error', error.message);
+    }
+  };
+////
+
+const AuthModal = ({ visible, onClose }) => {
+
+  const [email, setEmail] = useState('');
+
+  const [password, setPassword] = useState('');
+
+  const [error, setError] = useState('');
+
+  const [signUpMode, setSignUpMode] = useState(false);
+
+
+  const handleAuth = async (mode) => {
+
+    setError('');
+
+    try {
+
+      await auth().setPersistence(auth.Auth.Persistence.LOCAL); // Add persistence!
+
+
+      if (mode === 'signup') {
+
+        await auth().createUserWithEmailAndPassword(email, password);
+
+      } else {
+
+        await auth().signInWithEmailAndPassword(email, password);
+
+      }
+
+      onClose();
+
+    } catch (error) {
+
+      setError(error.message); // Set error message
+
+      Alert.alert('Authentication Error', error.message);
+
+    }
+
+  };
 
   // Load data from AsyncStorage
   const loadData = async () => {
@@ -264,28 +445,93 @@ export default function App() {
     );
   };
 
+  // Authentication Modal
+  const renderAuthModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={!user}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Sign In to Track Cat Meals</Text>
+          
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={signIn}
+            >
+              <Text style={styles.confirmButtonText}>Sign In</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={signUp}
+            >
+              <Text style={styles.cancelButtonText}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+          <Modal visible={visible} transparent animationType="slide">
+
+<View style={styles.modalOverlay}>
+
+  <View style={styles.modalContainer}>
+
+    <Text style={styles.modalTitle}>{signUpMode ? 'Sign Up' : 'Sign In'}</Text>
+
+    <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} />
+
+    <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
+
+    <Text style={styles.errorText}>{error}</Text> {/* Display error */}
+
+    <TouchableOpacity style={styles.button} onPress={() => handleAuth(signUpMode ? 'signup' : 'signin')}>
+
+      <Text style={styles.buttonText}>{signUpMode ? 'Sign Up' : 'Sign In'}</Text>
+
+    </TouchableOpacity>
+
+    <TouchableOpacity onPress={() => setSignUpMode(!signUpMode)}>
+
+      <Text>{signUpMode ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}</Text>
+
+    </TouchableOpacity>
+
+  </View>
+
+</View>
+
+</Modal>
+
+
+
+      {/* Centered Header */}
+      <View style={styles.centeredHeader}>
         <Text style={styles.title}>Cat Meal Tracker</Text>
-        <View style={styles.headerButtons}>
-          {cats.length > 0 && (
-            <TouchableOpacity 
-              style={styles.addButton} 
-              onPress={() => setAddMealModalVisible(true)}
-            >
-              <Ionicons name="add-circle" size={24} color="#fff" />
-              <Text style={styles.addButtonText}>Add Meal</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={styles.addButton} 
-            onPress={() => setAddCatModalVisible(true)}
-          >
-            <Ionicons name="add-circle" size={24} color="#fff" />
-            <Text style={styles.addButtonText}>Add Cat</Text>
-          </TouchableOpacity>
-        </View>
       </View>
       
       {/* Cat List */}
@@ -327,7 +573,7 @@ export default function App() {
           </View>
           
           {statsView ? (
-            // Stats View
+            // Stats View (unchanged)
             <ScrollView style={styles.statsContainer}>
               {getCatStats() ? (
                 <>
@@ -363,7 +609,7 @@ export default function App() {
               )}
             </ScrollView>
           ) : (
-            // Meals View
+            // Meals View (unchanged)
             getCatMeals().length > 0 ? (
               <FlatList
                 data={getCatMeals()}
@@ -387,46 +633,66 @@ export default function App() {
         </View>
       )}
       
+      {/* Bottom Buttons Container */}
+      <View style={styles.bottomButtonsContainer}>
+        {cats.length > 0 && (
+          <TouchableOpacity 
+            style={styles.bottomButton} 
+            onPress={() => setAddMealModalVisible(true)}
+          >
+            <Ionicons name="add-circle" size={24} color="#fff" />
+            <Text style={styles.bottomButtonText}>Add Meal</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity 
+          style={styles.bottomButton} 
+          onPress={() => setAddCatModalVisible(true)}
+        >
+          <Ionicons name="add-circle" size={24} color="#fff" />
+          <Text style={styles.bottomButtonText}>Add Cat</Text>
+        </TouchableOpacity>
+      </View>
+  
       {/* Add Cat Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={addCatModalVisible}
-        onRequestClose={() => setAddCatModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Add New Cat</Text>
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Cat Name"
-              value={newCatName}
-              onChangeText={setNewCatName}
-              autoFocus
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setNewCatName('');
-                  setAddCatModalVisible(false);
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
-                onPress={addCat}
-              >
-                <Text style={styles.confirmButtonText}>Add Cat</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+            <Modal
+              animationType="slide"
+              transparent={true}
+              visible={addCatModalVisible}
+              onRequestClose={() => setAddCatModalVisible(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContainer}>
+                  <Text style={styles.modalTitle}>Add New Cat</Text>
+                  
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Cat Name"
+                    value={newCatName}
+                    onChangeText={setNewCatName}
+                    autoFocus
+                  />
+                  
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.cancelButton]}
+                      onPress={() => {
+                        setNewCatName('');
+                        setAddCatModalVisible(false);
+                      }}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.confirmButton]}
+                      onPress={addCat}
+                    >
+                      <Text style={styles.confirmButtonText}>Add Cat</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
       
       {/* Add Meal Modal */}
       <Modal
@@ -561,6 +827,36 @@ export default function App() {
                 <Text style={styles.confirmButtonText}>Add Meal</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+      {/* Authentication Modal */}
+      {renderAuthModal()}
+
+      {/* Invite Partner Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={inviteModalVisible}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Invite Partner</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Partner's Email"
+              value={partnerEmail}
+              onChangeText={setPartnerEmail}
+              keyboardType="email-address"
+            />
+            
+            <TouchableOpacity
+              style={styles.confirmButton}
+              onPress={invitePartner}
+            >
+              <Text style={styles.confirmButtonText}>Send Invite</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1007,5 +1303,46 @@ const styles = StyleSheet.create({
   addPresetButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  centeredHeader: {
+    paddingTop:40,
+    paddingBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8f8f8',
+  },
+  
+  // Bottom buttons container
+  bottomButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    backgroundColor: '#007bff',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  
+  // Bottom button styles
+  bottomButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0056b3',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  
+  bottomButtonText: {
+    color: '#fff',
+    marginLeft: 5,
+    fontWeight: 'bold',
+  },
+  
+  // Adjust container to allow space for bottom buttons
+  container: {
+    flex: 1,
+    paddingBottom: 60, // Space for bottom buttons
   },
 });
